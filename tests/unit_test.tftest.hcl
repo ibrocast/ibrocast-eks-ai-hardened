@@ -1,11 +1,12 @@
 # unit_test.tftest.hcl — Terraform native tests (terraform test, v1.7+)
-# Uses mock providers so no AWS credentials are required.
+# Uses mock providers + override_resource so no AWS credentials are required.
 #
-# All runs use command = apply (not plan) because the SEC-001/SEC-002 check
-# blocks in compliance.tf reference computed attributes on aws_eks_cluster
-# (encryption_config[*].provider[0].key_arn, vpc_config[0].endpoint_*) that
-# are only "known after apply". Mock apply populates them from the mock_resource
-# defaults below, allowing check blocks to evaluate successfully.
+# All runs use command = apply so that check blocks in compliance.tf can
+# evaluate computed attributes (encryption_config, endpoint_private_access).
+#
+# override_resource blocks intercept resources whose computed arn attribute
+# is consumed by downstream resources; without valid ARN format the AWS
+# provider rejects the plan.
 
 # ── Mock providers ────────────────────────────────────────────────────────────
 
@@ -24,14 +25,64 @@ mock_provider "aws" {
       user_id    = "AIDAMOCKUSERID"
     }
   }
+}
 
-  # Seed the EKS cluster with values that satisfy the SEC-001/SEC-002 checks.
-  mock_resource "aws_eks_cluster" {
+mock_provider "tls" {
+  mock_data "tls_certificate" {
     defaults = {
+      certificates = [{ sha1_fingerprint = "aabbccddeeff00112233445566778899aabbccdd" }]
+    }
+  }
+}
+
+# ── Shared override values (used in every run block) ─────────────────────────
+# These inject valid ARN strings so the AWS provider's format validator passes
+# when downstream resources reference them (role_arn, kms_key_id, etc.).
+
+# ── Test: default variable values are sane ────────────────────────────────────
+
+run "default_variable_values_are_sane" {
+  command = apply
+
+  variables {
+    cost_center = "cc-test-001"
+  }
+
+  override_resource {
+    target = aws_iam_role.cluster
+    values = { arn = "arn:aws:iam::123456789012:role/mock-eks-cluster-role" }
+  }
+
+  override_resource {
+    target = aws_iam_role.node_group
+    values = { arn = "arn:aws:iam::123456789012:role/mock-eks-node-role" }
+  }
+
+  override_resource {
+    target = aws_iam_role.flow_log
+    values = { arn = "arn:aws:iam::123456789012:role/mock-flow-log-role" }
+  }
+
+  override_resource {
+    target = aws_kms_key.eks
+    values = {
+      arn    = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id"
+      key_id = "mock-kms-key-id"
+    }
+  }
+
+  override_resource {
+    target = aws_cloudwatch_log_group.flow_logs
+    values = { arn = "arn:aws:logs:us-east-1:123456789012:log-group:/aws/vpc/mock/flow-logs" }
+  }
+
+  override_resource {
+    target = aws_eks_cluster.main
+    values = {
       endpoint = "https://mock.eks.us-east-1.amazonaws.com"
       encryption_config = [
         {
-          provider  = [{ key_arn = "arn:aws:kms:us-east-1:123456789012:key/mock-key-id" }]
+          provider  = [{ key_arn = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id" }]
           resources = ["secrets"]
         }
       ]
@@ -47,24 +98,6 @@ mock_provider "aws" {
         { oidc = [{ issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }] }
       ]
     }
-  }
-}
-
-mock_provider "tls" {
-  mock_data "tls_certificate" {
-    defaults = {
-      certificates = [{ sha1_fingerprint = "aabbccddeeff00112233445566778899aabbccdd" }]
-    }
-  }
-}
-
-# ── Test: default variable values are sane ────────────────────────────────────
-
-run "default_variable_values_are_sane" {
-  command = apply
-
-  variables {
-    cost_center = "cc-test-001"
   }
 
   assert {
@@ -100,6 +133,58 @@ run "overridden_vpc_cidr_and_k8s_version_propagate" {
     cost_center = "cc-test-002"
   }
 
+  override_resource {
+    target = aws_iam_role.cluster
+    values = { arn = "arn:aws:iam::123456789012:role/mock-eks-cluster-role" }
+  }
+
+  override_resource {
+    target = aws_iam_role.node_group
+    values = { arn = "arn:aws:iam::123456789012:role/mock-eks-node-role" }
+  }
+
+  override_resource {
+    target = aws_iam_role.flow_log
+    values = { arn = "arn:aws:iam::123456789012:role/mock-flow-log-role" }
+  }
+
+  override_resource {
+    target = aws_kms_key.eks
+    values = {
+      arn    = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id"
+      key_id = "mock-kms-key-id"
+    }
+  }
+
+  override_resource {
+    target = aws_cloudwatch_log_group.flow_logs
+    values = { arn = "arn:aws:logs:us-east-1:123456789012:log-group:/aws/vpc/mock/flow-logs" }
+  }
+
+  override_resource {
+    target = aws_eks_cluster.main
+    values = {
+      endpoint = "https://mock.eks.us-east-1.amazonaws.com"
+      encryption_config = [
+        {
+          provider  = [{ key_arn = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id" }]
+          resources = ["secrets"]
+        }
+      ]
+      vpc_config = [
+        {
+          endpoint_private_access   = true
+          endpoint_public_access    = false
+          subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
+          cluster_security_group_id = "sg-mock"
+        }
+      ]
+      identity = [
+        { oidc = [{ issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }] }
+      ]
+    }
+  }
+
   assert {
     condition     = var.vpc_cidr == "172.16.0.0/16"
     error_message = "Overridden vpc_cidr should be '172.16.0.0/16', got '${var.vpc_cidr}'."
@@ -126,6 +211,59 @@ run "eks_cluster_name_matches_variable" {
     cost_center  = "cc-test-003"
   }
 
+  override_resource {
+    target = aws_iam_role.cluster
+    values = { arn = "arn:aws:iam::123456789012:role/mock-eks-cluster-role" }
+  }
+
+  override_resource {
+    target = aws_iam_role.node_group
+    values = { arn = "arn:aws:iam::123456789012:role/mock-eks-node-role" }
+  }
+
+  override_resource {
+    target = aws_iam_role.flow_log
+    values = { arn = "arn:aws:iam::123456789012:role/mock-flow-log-role" }
+  }
+
+  override_resource {
+    target = aws_kms_key.eks
+    values = {
+      arn    = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id"
+      key_id = "mock-kms-key-id"
+    }
+  }
+
+  override_resource {
+    target = aws_cloudwatch_log_group.flow_logs
+    values = { arn = "arn:aws:logs:us-east-1:123456789012:log-group:/aws/vpc/mock/flow-logs" }
+  }
+
+  override_resource {
+    target = aws_eks_cluster.main
+    values = {
+      name     = "my-test-cluster"
+      endpoint = "https://mock.eks.us-east-1.amazonaws.com"
+      encryption_config = [
+        {
+          provider  = [{ key_arn = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id" }]
+          resources = ["secrets"]
+        }
+      ]
+      vpc_config = [
+        {
+          endpoint_private_access   = true
+          endpoint_public_access    = false
+          subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
+          cluster_security_group_id = "sg-mock"
+        }
+      ]
+      identity = [
+        { oidc = [{ issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }] }
+      ]
+    }
+  }
+
   assert {
     condition     = aws_eks_cluster.main.name == var.cluster_name
     error_message = "aws_eks_cluster.main.name must equal var.cluster_name ('${var.cluster_name}')."
@@ -139,6 +277,58 @@ run "private_subnets_use_correct_cidr_blocks" {
 
   variables {
     cost_center = "cc-test-004"
+  }
+
+  override_resource {
+    target = aws_iam_role.cluster
+    values = { arn = "arn:aws:iam::123456789012:role/mock-eks-cluster-role" }
+  }
+
+  override_resource {
+    target = aws_iam_role.node_group
+    values = { arn = "arn:aws:iam::123456789012:role/mock-eks-node-role" }
+  }
+
+  override_resource {
+    target = aws_iam_role.flow_log
+    values = { arn = "arn:aws:iam::123456789012:role/mock-flow-log-role" }
+  }
+
+  override_resource {
+    target = aws_kms_key.eks
+    values = {
+      arn    = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id"
+      key_id = "mock-kms-key-id"
+    }
+  }
+
+  override_resource {
+    target = aws_cloudwatch_log_group.flow_logs
+    values = { arn = "arn:aws:logs:us-east-1:123456789012:log-group:/aws/vpc/mock/flow-logs" }
+  }
+
+  override_resource {
+    target = aws_eks_cluster.main
+    values = {
+      endpoint = "https://mock.eks.us-east-1.amazonaws.com"
+      encryption_config = [
+        {
+          provider  = [{ key_arn = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id" }]
+          resources = ["secrets"]
+        }
+      ]
+      vpc_config = [
+        {
+          endpoint_private_access   = true
+          endpoint_public_access    = false
+          subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
+          cluster_security_group_id = "sg-mock"
+        }
+      ]
+      identity = [
+        { oidc = [{ issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }] }
+      ]
+    }
   }
 
   assert {
