@@ -1,5 +1,6 @@
 terraform {
-  required_version = ">= 1.5.0"
+  # 1.7+ required for mock_data blocks in terraform test
+  required_version = ">= 1.7.0"
 
   required_providers {
     aws = {

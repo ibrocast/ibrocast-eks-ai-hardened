@@ -3,8 +3,26 @@
 # structural correctness without provisioning any real AWS infrastructure.
 
 # ── Mock providers so no AWS credentials are required ─────────────────────────
+# mock_data blocks (Terraform 1.7+) seed data source responses so the plan
+# can resolve AZ names and caller identity without real AWS credentials.
 
-mock_provider "aws" {}
+mock_provider "aws" {
+  mock_data "aws_availability_zones" {
+    defaults = {
+      id    = "us-east-1"
+      names = ["us-east-1a", "us-east-1b", "us-east-1c"]
+    }
+  }
+
+  mock_data "aws_caller_identity" {
+    defaults = {
+      account_id = "123456789012"
+      arn        = "arn:aws:iam::123456789012:root"
+      user_id    = "AIDAMOCKUSERID"
+    }
+  }
+}
+
 mock_provider "tls" {}
 
 # ── Test: default variable values are sane ────────────────────────────────────
