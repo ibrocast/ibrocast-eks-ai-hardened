@@ -3,10 +3,13 @@
 #
 # All runs use command = apply so that check blocks in compliance.tf can
 # evaluate computed attributes (encryption_config, endpoint_private_access).
+# Terraform 1.8+ treats "check block assertion known after apply" as a hard
+# error during plan-mode tests, so apply-mode is required here.
 #
-# override_resource blocks intercept resources whose computed arn attribute
-# is consumed by downstream resources; without valid ARN format the AWS
-# provider rejects the plan.
+# override_resource.values uses plain objects {} (not list-wrapped [{...}])
+# for TypeList block attributes (vpc_config, encryption_config, identity)
+# because HCL [{...}] produces a tuple — not the list type the AWS provider
+# schema expects.
 
 # ── Mock providers ────────────────────────────────────────────────────────────
 
@@ -34,10 +37,6 @@ mock_provider "tls" {
     }
   }
 }
-
-# ── Shared override values (used in every run block) ─────────────────────────
-# These inject valid ARN strings so the AWS provider's format validator passes
-# when downstream resources reference them (role_arn, kms_key_id, etc.).
 
 # ── Test: default variable values are sane ────────────────────────────────────
 
@@ -76,27 +75,25 @@ run "default_variable_values_are_sane" {
     values = { arn = "arn:aws:logs:us-east-1:123456789012:log-group:/aws/vpc/mock/flow-logs" }
   }
 
+  # TypeList block attributes must be plain objects {}, not tuple-wrapped [{...}].
+  # Terraform wraps them into a list internally — vpc_config[0] still works.
   override_resource {
     target = aws_eks_cluster.main
     values = {
       endpoint = "https://mock.eks.us-east-1.amazonaws.com"
-      encryption_config = [
-        {
-          provider  = [{ key_arn = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id" }]
-          resources = ["secrets"]
-        }
-      ]
-      vpc_config = [
-        {
-          endpoint_private_access   = true
-          endpoint_public_access    = false
-          subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
-          cluster_security_group_id = "sg-mock"
-        }
-      ]
-      identity = [
-        { oidc = [{ issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }] }
-      ]
+      encryption_config = {
+        resources = ["secrets"]
+        provider  = { key_arn = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id" }
+      }
+      vpc_config = {
+        endpoint_private_access   = true
+        endpoint_public_access    = false
+        subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
+        cluster_security_group_id = "sg-mock"
+      }
+      identity = {
+        oidc = { issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }
+      }
     }
   }
 
@@ -165,23 +162,19 @@ run "overridden_vpc_cidr_and_k8s_version_propagate" {
     target = aws_eks_cluster.main
     values = {
       endpoint = "https://mock.eks.us-east-1.amazonaws.com"
-      encryption_config = [
-        {
-          provider  = [{ key_arn = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id" }]
-          resources = ["secrets"]
-        }
-      ]
-      vpc_config = [
-        {
-          endpoint_private_access   = true
-          endpoint_public_access    = false
-          subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
-          cluster_security_group_id = "sg-mock"
-        }
-      ]
-      identity = [
-        { oidc = [{ issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }] }
-      ]
+      encryption_config = {
+        resources = ["secrets"]
+        provider  = { key_arn = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id" }
+      }
+      vpc_config = {
+        endpoint_private_access   = true
+        endpoint_public_access    = false
+        subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
+        cluster_security_group_id = "sg-mock"
+      }
+      identity = {
+        oidc = { issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }
+      }
     }
   }
 
@@ -244,23 +237,19 @@ run "eks_cluster_name_matches_variable" {
     values = {
       name     = "my-test-cluster"
       endpoint = "https://mock.eks.us-east-1.amazonaws.com"
-      encryption_config = [
-        {
-          provider  = [{ key_arn = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id" }]
-          resources = ["secrets"]
-        }
-      ]
-      vpc_config = [
-        {
-          endpoint_private_access   = true
-          endpoint_public_access    = false
-          subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
-          cluster_security_group_id = "sg-mock"
-        }
-      ]
-      identity = [
-        { oidc = [{ issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }] }
-      ]
+      encryption_config = {
+        resources = ["secrets"]
+        provider  = { key_arn = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id" }
+      }
+      vpc_config = {
+        endpoint_private_access   = true
+        endpoint_public_access    = false
+        subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
+        cluster_security_group_id = "sg-mock"
+      }
+      identity = {
+        oidc = { issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }
+      }
     }
   }
 
@@ -311,23 +300,19 @@ run "private_subnets_use_correct_cidr_blocks" {
     target = aws_eks_cluster.main
     values = {
       endpoint = "https://mock.eks.us-east-1.amazonaws.com"
-      encryption_config = [
-        {
-          provider  = [{ key_arn = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id" }]
-          resources = ["secrets"]
-        }
-      ]
-      vpc_config = [
-        {
-          endpoint_private_access   = true
-          endpoint_public_access    = false
-          subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
-          cluster_security_group_id = "sg-mock"
-        }
-      ]
-      identity = [
-        { oidc = [{ issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }] }
-      ]
+      encryption_config = {
+        resources = ["secrets"]
+        provider  = { key_arn = "arn:aws:kms:us-east-1:123456789012:key/mock-kms-key-id" }
+      }
+      vpc_config = {
+        endpoint_private_access   = true
+        endpoint_public_access    = false
+        subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
+        cluster_security_group_id = "sg-mock"
+      }
+      identity = {
+        oidc = { issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }
+      }
     }
   }
 
