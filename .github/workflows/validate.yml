@@ -35,6 +35,10 @@ jobs:
 
       - name: tflint — Install plugins
         run: tflint --init --config=.tflint.hcl
+        env:
+          # Authenticated requests avoid the GitHub API anonymous rate limit
+          # that tflint hits when downloading the AWS ruleset plugin.
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: tflint — Lint
         run: tflint --no-color --config=.tflint.hcl
