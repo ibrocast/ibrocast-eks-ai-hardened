@@ -26,16 +26,52 @@ resource "aws_subnet" "private" {
 }
 
 resource "aws_subnet" "public" {
-  count                   = 3
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = cidrsubnet(var.vpc_cidr, 4, count.index + 3)
-  availability_zone       = data.aws_availability_zones.available.names[count.index]
-  map_public_ip_on_launch = true
+  count             = 3
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = cidrsubnet(var.vpc_cidr, 4, count.index + 3)
+  availability_zone = data.aws_availability_zones.available.names[count.index]
+  # CKV_AWS_130: Disable auto-assignment; NAT GW EIPs provide outbound internet.
+  map_public_ip_on_launch = false
 
   tags = {
     Name                                        = "${var.cluster_name}-public-${count.index}"
     "kubernetes.io/role/elb"                    = "1"
     "kubernetes.io/cluster/${var.cluster_name}" = "owned"
+  }
+}
+
+# ── Default Security Group lockdown ──────────────────────────────────────────
+# CKV2_AWS_12: Override the default SG with zero ingress/egress rules so that
+# any resource accidentally assigned to it has no network access.
+
+resource "aws_default_security_group" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "${var.cluster_name}-default-sg-locked"
+  }
+}
+
+# ── VPC Flow Logs ─────────────────────────────────────────────────────────────
+# CKV2_AWS_11: Capture all accepted/rejected traffic for security auditing.
+
+resource "aws_cloudwatch_log_group" "flow_logs" {
+  name              = "/aws/vpc/${var.cluster_name}/flow-logs"
+  retention_in_days = 90
+
+  tags = {
+    Name = "${var.cluster_name}-flow-logs"
+  }
+}
+
+resource "aws_flow_log" "main" {
+  vpc_id          = aws_vpc.main.id
+  traffic_type    = "ALL"
+  iam_role_arn    = aws_iam_role.flow_log.arn
+  log_destination = aws_cloudwatch_log_group.flow_logs.arn
+
+  tags = {
+    Name = "${var.cluster_name}-flow-log"
   }
 }
 

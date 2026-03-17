@@ -5,6 +5,37 @@ resource "aws_kms_key" "eks" {
   deletion_window_in_days = 30
   enable_key_rotation     = true
 
+  # CKV2_AWS_64: Explicit key policy — root account retains full control;
+  # prevents key from becoming permanently inaccessible.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EnableRootAccountPermissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowEKSServiceUse"
+        Effect = "Allow"
+        Principal = {
+          Service = "eks.amazonaws.com"
+        }
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+          "kms:DescribeKey"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+
   tags = {
     Name = "${var.cluster_name}-eks-kms"
   }
