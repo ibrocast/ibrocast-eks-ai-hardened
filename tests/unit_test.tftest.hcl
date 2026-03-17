@@ -91,9 +91,9 @@ run "default_variable_values_are_sane" {
         subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
         cluster_security_group_id = "sg-mock"
       }
-      identity = {
-        oidc = { issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }
-      }
+      identity = [
+        { oidc = [{ issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }] }
+      ]
     }
   }
 
@@ -172,9 +172,9 @@ run "overridden_vpc_cidr_and_k8s_version_propagate" {
         subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
         cluster_security_group_id = "sg-mock"
       }
-      identity = {
-        oidc = { issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }
-      }
+      identity = [
+        { oidc = [{ issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }] }
+      ]
     }
   }
 
@@ -247,9 +247,9 @@ run "eks_cluster_name_matches_variable" {
         subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
         cluster_security_group_id = "sg-mock"
       }
-      identity = {
-        oidc = { issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }
-      }
+      identity = [
+        { oidc = [{ issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }] }
+      ]
     }
   }
 
@@ -310,9 +310,9 @@ run "private_subnets_use_correct_cidr_blocks" {
         subnet_ids                = ["subnet-mock1", "subnet-mock2", "subnet-mock3"]
         cluster_security_group_id = "sg-mock"
       }
-      identity = {
-        oidc = { issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }
-      }
+      identity = [
+        { oidc = [{ issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/MOCKID" }] }
+      ]
     }
   }
 
