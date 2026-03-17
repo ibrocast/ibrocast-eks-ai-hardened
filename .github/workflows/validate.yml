@@ -1,0 +1,62 @@
+name: CI — Terraform Certification
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    name: Lint · Scan · Validate · Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Terraform setup ────────────────────────────────────────────────────
+      - name: Setup Terraform 1.9
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9"
+
+      - name: Terraform Init (no backend — CI safe)
+        run: terraform init -backend=false -input=false
+
+      # ── Lint ───────────────────────────────────────────────────────────────
+      - name: Setup tflint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.55.1
+
+      - name: tflint — Install plugins
+        run: tflint --init --config=.tflint.hcl
+
+      - name: tflint — Lint
+        run: tflint --no-color --config=.tflint.hcl
+
+      # ── Security scan ──────────────────────────────────────────────────────
+      # Governance rule: pipeline FAILS on CRITICAL or HIGH findings.
+      # LOW / MEDIUM / UNKNOWN are treated as warnings (soft-fail).
+      - name: Security Scan — checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          compact: true
+          quiet: true
+          output_format: cli
+          # Soft-fail LOW/MEDIUM/UNKNOWN — hard-fail CRITICAL/HIGH
+          soft_fail_on: "LOW,MEDIUM,UNKNOWN"
+
+      # ── Validate ───────────────────────────────────────────────────────────
+      - name: terraform validate
+        run: terraform validate -no-color
+
+      # ── Unit tests (mock provider — no AWS credentials required) ──────────
+      - name: terraform test — unit suite
+        run: terraform test -no-color
