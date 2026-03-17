@@ -56,8 +56,13 @@ resource "aws_default_security_group" "main" {
 # CKV2_AWS_11: Capture all accepted/rejected traffic for security auditing.
 
 resource "aws_cloudwatch_log_group" "flow_logs" {
-  name              = "/aws/vpc/${var.cluster_name}/flow-logs"
-  retention_in_days = 90
+  name = "/aws/vpc/${var.cluster_name}/flow-logs"
+
+  # CKV_AWS_338: retain logs for at least 1 year (365 days)
+  retention_in_days = 365
+
+  # CKV_AWS_158: encrypt log data at rest with the EKS KMS key
+  kms_key_id = aws_kms_key.eks.arn
 
   tags = {
     Name = "${var.cluster_name}-flow-logs"

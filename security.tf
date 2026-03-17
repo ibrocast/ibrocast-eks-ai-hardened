@@ -32,6 +32,27 @@ resource "aws_kms_key" "eks" {
           "kms:DescribeKey"
         ]
         Resource = "*"
+      },
+      {
+        # Allow CloudWatch Logs to encrypt/decrypt flow log data in this key.
+        # Condition scopes access to log groups in this account/region only.
+        Sid    = "AllowCloudWatchLogsUse"
+        Effect = "Allow"
+        Principal = {
+          Service = "logs.${var.region}.amazonaws.com"
+        }
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+          "kms:DescribeKey"
+        ]
+        Resource = "*"
+        Condition = {
+          ArnLike = {
+            "kms:EncryptionContext:aws:logs:arn" = "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:*"
+          }
+        }
       }
     ]
   })

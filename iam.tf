@@ -17,18 +17,22 @@ resource "aws_iam_role_policy" "flow_log" {
   name = "${var.cluster_name}-flow-log-policy"
   role = aws_iam_role.flow_log.id
 
+  # CKV_AWS_355 / CKV_AWS_290: scope resource to the specific log group
+  # rather than "*" to satisfy least-privilege constraints.
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect = "Allow"
       Action = [
-        "logs:CreateLogGroup",
         "logs:CreateLogStream",
         "logs:PutLogEvents",
         "logs:DescribeLogGroups",
         "logs:DescribeLogStreams"
       ]
-      Resource = "*"
+      Resource = [
+        aws_cloudwatch_log_group.flow_logs.arn,
+        "${aws_cloudwatch_log_group.flow_logs.arn}:log-stream:*"
+      ]
     }]
   })
 }
